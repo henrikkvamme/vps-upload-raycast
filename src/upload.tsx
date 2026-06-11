@@ -8,20 +8,14 @@ import {
   Form,
   Icon,
   Toast,
-  getPreferenceValues,
   getSelectedFinderItems,
-  openCommandPreferences,
   showHUD,
   showToast,
 } from "@raycast/api";
 import { bar, isFile, plan, transfer } from "./uploader";
+import { Config, DEFAULT_DIR, loadConfig, saveConfig } from "./config";
 
-interface Prefs {
-  sshHost: string;
-  remoteDir: string;
-}
-
-type Phase = "onboarding" | "select" | "uploading" | "done" | "error";
+type Phase = "loading" | "setup" | "select" | "uploading" | "done" | "error";
 
 function testConnection(host: string): Promise<string> {
   return new Promise((resolve) => {
@@ -49,11 +43,13 @@ function testConnection(host: string): Promise<string> {
 }
 
 export default function Command() {
-  const prefs = getPreferenceValues<Prefs>();
-  const host = (prefs.sshHost || "").trim();
-  const remoteDir = (prefs.remoteDir || "/tmp/raycast-uploads").trim();
-
-  const [phase, setPhase] = useState<Phase>(host ? "select" : "onboarding");
+  const [phase, setPhase] = useState<Phase>("loading");
+  const [config, setConfig] = useState<Config>({
+    host: "",
+    remoteDir: DEFAULT_DIR,
+  });
+  const [setupHost, setSetupHost] = useState("");
+  const [setupDir, setSetupDir] = useState(DEFAULT_DIR);
   const [files, setFiles] = useState<string[]>([]);
   const [progress, setProgress] = useState(0);
   const [statusLine, setStatusLine] = useState("");
@@ -61,10 +57,17 @@ export default function Command() {
   const [errorMsg, setErrorMsg] = useState("");
   const started = useRef(false);
 
-  // Prefill the picker from the current Finder selection, if any.
   useEffect(() => {
-    if (!host) return;
     (async () => {
+      const c = await loadConfig();
+      setConfig(c);
+      setSetupHost(c.host);
+      setSetupDir(c.remoteDir);
+      if (!c.host) {
+        setPhase("setup");
+        return;
+      }
+      setPhase("select");
       try {
         const items = await getSelectedFinderItems();
         const picked = items.map((i) => i.path).filter(isFile);
@@ -73,21 +76,25 @@ export default function Command() {
         // No Finder selection — fine.
       }
     })();
-  }, [host]);
+  }, []);
 
-  async function runTest() {
-    if (!host) {
-      await showToast({ style: Toast.Style.Failure, title: "No SSH host set" });
+  async function runTest(host: string) {
+    const h = host.trim();
+    if (!h) {
+      await showToast({
+        style: Toast.Style.Failure,
+        title: "Enter an SSH host first",
+      });
       return;
     }
     const toast = await showToast({
       style: Toast.Style.Animated,
-      title: `Testing ${host}…`,
+      title: `Testing ${h}…`,
     });
-    const res = await testConnection(host);
+    const res = await testConnection(h);
     if (res === "ok") {
       toast.style = Toast.Style.Success;
-      toast.title = `Connected to ${host}`;
+      toast.title = `Connected to ${h}`;
     } else {
       toast.style = Toast.Style.Failure;
       toast.title = "Connection failed";
@@ -95,9 +102,35 @@ export default function Command() {
     }
   }
 
+  async function saveSetup() {
+    const host = setupHost.trim();
+    if (!host) {
+      await showToast({
+        style: Toast.Style.Failure,
+        title: "Enter an SSH host",
+      });
+      return;
+    }
+    const c: Config = { host, remoteDir: (setupDir || DEFAULT_DIR).trim() };
+    await saveConfig(c);
+    setConfig(c);
+    await showToast({
+      style: Toast.Style.Success,
+      title: "Saved",
+      message: `${c.host}:${c.remoteDir}`,
+    });
+    setPhase("select");
+  }
+
+  function openConfigure() {
+    setSetupHost(config.host);
+    setSetupDir(config.remoteDir);
+    setPhase("setup");
+  }
+
   async function upload(selected: string[]) {
     if (started.current) return;
-    const { valid, targets } = plan(selected, remoteDir);
+    const { valid, targets } = plan(selected, config.remoteDir);
     if (valid.length === 0) {
       await showToast({
         style: Toast.Style.Failure,
@@ -115,12 +148,12 @@ export default function Command() {
 
     const toast = await showToast({
       style: Toast.Style.Animated,
-      title: `Uploading to ${host}`,
+      title: `Uploading to ${config.host}`,
       message: bar(0),
     });
 
     try {
-      await transfer(valid, targets, host, remoteDir, {
+      await transfer(valid, targets, config.host, config.remoteDir, {
         onProgress: (pct) => {
           setProgress(pct);
           toast.message = bar(pct);
@@ -144,40 +177,54 @@ export default function Command() {
     }
   }
 
-  if (phase === "onboarding") {
-    const md = `# ☁️ VPS Upload
+  if (phase === "loading") {
+    return <Detail isLoading markdown="" />;
+  }
 
-Upload files to your server over SSH and get the **remote path on your clipboard** — perfect for referencing local files inside a remote SSH session (e.g. an AI coding agent running on your VPS).
-
-## Get started
-
-1. **Set your server.** Open the command preferences (action below) and enter your **SSH Host** — an \`~/.ssh/config\` alias like \`vps\`, or \`user@host\` — and a **Remote Directory**.
-2. **Make sure key-based login works** (no password prompt):
-   \`\`\`
-   ssh -o BatchMode=yes <host> true
-   \`\`\`
-   If that hangs or errors, set up an SSH key first.
-3. **Use it:** select file(s) in Finder and run **Upload Finder Selection** (give it a hotkey!), or pick files in **Upload Files**.
-
-_The remote path is copied to your clipboard the moment the upload starts._`;
+  if (phase === "setup") {
+    const firstRun = !config.host;
     return (
-      <Detail
-        markdown={md}
+      <Form
+        navigationTitle="Set up VPS Upload"
         actions={
           <ActionPanel>
-            <Action
-              title="Open Preferences"
-              icon={Icon.Gear}
-              onAction={openCommandPreferences}
+            <Action.SubmitForm
+              title="Save"
+              icon={Icon.Check}
+              onSubmit={saveSetup}
             />
             <Action
               title="Test Connection"
               icon={Icon.Bolt}
-              onAction={runTest}
+              onAction={() => runTest(setupHost)}
             />
           </ActionPanel>
         }
-      />
+      >
+        <Form.Description
+          text={
+            firstRun
+              ? "☁️ Welcome! Tell VPS Upload where to send files. Settings are stored locally on this Mac — no Raycast Settings trip needed."
+              : "Update where VPS Upload sends files."
+          }
+        />
+        <Form.TextField
+          id="sshHost"
+          title="SSH Host"
+          placeholder="vps or user@host"
+          value={setupHost}
+          onChange={setSetupHost}
+          info="An ~/.ssh/config alias (e.g. vps) or user@host. Must allow key-based, non-interactive login (ssh -o BatchMode=yes <host> true)."
+        />
+        <Form.TextField
+          id="remoteDir"
+          title="Remote Directory"
+          placeholder={DEFAULT_DIR}
+          value={setupDir}
+          onChange={setSetupDir}
+          info="Absolute path on the server where files are placed. Created if missing."
+        />
+      </Form>
     );
   }
 
@@ -196,18 +243,18 @@ _The remote path is copied to your clipboard the moment the upload starts._`;
             <Action
               title="Test Connection"
               icon={Icon.Bolt}
-              onAction={runTest}
+              onAction={() => runTest(config.host)}
             />
             <Action
-              title="Open Preferences"
+              title="Configure Server"
               icon={Icon.Gear}
-              onAction={openCommandPreferences}
+              onAction={openConfigure}
             />
           </ActionPanel>
         }
       >
         <Form.Description
-          text={`Files upload to ${host}:${remoteDir} and the remote path is copied to your clipboard. Tip: select files in Finder and run "Upload Finder Selection" for a one-keystroke upload.`}
+          text={`Files upload to ${config.host}:${config.remoteDir} and the remote path is copied to your clipboard. Tip: select files in Finder and run "Upload Finder Selection" for a one-keystroke upload.`}
         />
         <Form.FilePicker
           id="files"
@@ -223,7 +270,7 @@ _The remote path is copied to your clipboard the moment the upload starts._`;
   const joined = remotePaths.join(" ");
   let markdown: string;
   if (phase === "uploading") {
-    markdown = `# Uploading to \`${host}\`\n\n\`\`\`\n${bar(progress)}\n\`\`\`\n\n${statusLine}\n\n_Remote path (already on clipboard):_\n\n\`${joined}\``;
+    markdown = `# Uploading to \`${config.host}\`\n\n\`\`\`\n${bar(progress)}\n\`\`\`\n\n${statusLine}\n\n_Remote path (already on clipboard):_\n\n\`${joined}\``;
   } else if (phase === "done") {
     markdown = `# ✅ Upload complete\n\n\`\`\`\n${bar(100)}\n\`\`\`\n\nRemote path copied to clipboard:\n\n\`${joined}\``;
   } else {
@@ -243,9 +290,9 @@ _The remote path is copied to your clipboard the moment the upload starts._`;
               />
             )}
             <Action
-              title="Open Preferences"
+              title="Configure Server"
               icon={Icon.Gear}
-              onAction={openCommandPreferences}
+              onAction={openConfigure}
             />
           </ActionPanel>
         ) : undefined

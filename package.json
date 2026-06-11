@@ -24,24 +24,6 @@
       "mode": "view"
     }
   ],
-  "preferences": [
-    {
-      "name": "sshHost",
-      "title": "SSH Host",
-      "description": "An ~/.ssh/config alias (e.g. \"vps\") or user@host. Must allow key-based, non-interactive login.",
-      "type": "textfield",
-      "required": false,
-      "placeholder": "vps or user@host"
-    },
-    {
-      "name": "remoteDir",
-      "title": "Remote Directory",
-      "description": "Absolute path on the server where files are placed. Created if missing.",
-      "type": "textfield",
-      "required": false,
-      "default": "/tmp/raycast-uploads"
-    }
-  ],
   "dependencies": {
     "@raycast/api": "^1.80.0"
   },

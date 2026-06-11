@@ -1,31 +1,29 @@
 import {
   Clipboard,
+  LaunchType,
   Toast,
-  getPreferenceValues,
   getSelectedFinderItems,
-  openCommandPreferences,
+  launchCommand,
   showHUD,
   showToast,
 } from "@raycast/api";
 import { bar, isFile, plan, transfer } from "./uploader";
-
-interface Prefs {
-  sshHost: string;
-  remoteDir: string;
-}
+import { loadConfig } from "./config";
 
 export default async function Command() {
-  const prefs = getPreferenceValues<Prefs>();
-  const host = (prefs.sshHost || "").trim();
-  const remoteDir = (prefs.remoteDir || "/tmp/raycast-uploads").trim();
+  const { host, remoteDir } = await loadConfig();
 
   if (!host) {
     await showToast({
       style: Toast.Style.Failure,
-      title: "Set your SSH host first",
-      message: "Opening preferences…",
+      title: "Set up VPS Upload first",
+      message: "Opening setup…",
     });
-    await openCommandPreferences();
+    try {
+      await launchCommand({ name: "upload", type: LaunchType.UserInitiated });
+    } catch {
+      // Could not launch the setup command — the toast already explains.
+    }
     return;
   }
 
