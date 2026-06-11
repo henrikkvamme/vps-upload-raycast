@@ -6,7 +6,7 @@ import { writeFileSync } from "node:fs";
 
 const SIZE = 512;
 const SS = 4; // supersampling factor
-const G = SIZE * SS;
+const TILE_R = 112; // corner radius of the icon tile (~22%, macOS-squircle-ish)
 
 // Colours
 const TOP = [45, 212, 191]; // teal-400  #2DD4BF
@@ -62,17 +62,21 @@ function colorAt(x, y) {
   return g;
 }
 
-// Supersample into the 512 buffer.
+// Supersample into the 512 buffer. The rounded-rect tile mask drives alpha so
+// the corners are transparent (matching other rounded Raycast icons).
 const data = Buffer.alloc(SIZE * SIZE * 4);
 for (let py = 0; py < SIZE; py++) {
   for (let px = 0; px < SIZE; px++) {
     let r = 0,
       gg = 0,
-      b = 0;
+      b = 0,
+      inside = 0;
     for (let sy = 0; sy < SS; sy++) {
       for (let sx = 0; sx < SS; sx++) {
         const x = px + (sx + 0.5) / SS;
         const y = py + (sy + 0.5) / SS;
+        if (!inRoundRect(x, y, 0, 0, SIZE, SIZE, TILE_R)) continue;
+        inside++;
         const c = colorAt(x, y);
         r += c[0];
         gg += c[1];
@@ -81,10 +85,14 @@ for (let py = 0; py < SIZE; py++) {
     }
     const n = SS * SS;
     const i = (py * SIZE + px) * 4;
-    data[i] = Math.round(r / n);
-    data[i + 1] = Math.round(gg / n);
-    data[i + 2] = Math.round(b / n);
-    data[i + 3] = 255;
+    if (inside === 0) {
+      data[i] = data[i + 1] = data[i + 2] = data[i + 3] = 0;
+    } else {
+      data[i] = Math.round(r / inside);
+      data[i + 1] = Math.round(gg / inside);
+      data[i + 2] = Math.round(b / inside);
+      data[i + 3] = Math.round((255 * inside) / n);
+    }
   }
 }
 
