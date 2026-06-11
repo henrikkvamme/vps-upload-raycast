@@ -1,0 +1,24 @@
+== gh auth ==
+/bin/bash: line 1: gh: command not found
+== whoami ==
+/bin/bash: line 1: gh: command not found
+gh: not authenticated (gh CLI not found)
+== whoami (via MCP) ==
+henrikkvamme
+== fork perms ==
+remote: Proxy error: repository not authorized
+fatal: unable to access 'http://127.0.0.1:38793/git/henrikkvamme/raycast-extensions/': The requested URL returned error: 502
+== fork perms (via proxy) ==
+Proxy error: repository not authorized (502) — fork not accessible via git proxy
+MCP: henrikkvamme/raycast-extensions not configured for this session
+== fork push dry-run ==
+SKIPPED — fork repo not accessible via git proxy or MCP in this session
+== standalone push dry-run ==
+Cloning into 'stdprobe'...
+To http://127.0.0.1:38793/git/henrikkvamme/vps-upload-raycast
+ * [new branch]      HEAD -> _perm_probe_delete_me
+
+== VERDICT ==
+AUTH_AS: henrikkvamme
+FORK_PUSH: no
+STANDALONE_PUSH: yes
