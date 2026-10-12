@@ -54,10 +54,25 @@ export interface Plan {
   targets: string[];
 }
 
+function deduplicateTargets(targets: string[]): string[] {
+  const seen = new Map<string, number>();
+  return targets.map((t) => {
+    const count = (seen.get(t) ?? 0) + 1;
+    seen.set(t, count);
+    if (count === 1) return t;
+    const slash = t.lastIndexOf("/");
+    const dot = t.lastIndexOf(".");
+    return dot > slash
+      ? `${t.slice(0, dot)}_${count}${t.slice(dot)}`
+      : `${t}_${count}`;
+  });
+}
+
 export function plan(files: string[], remoteDir: string): Plan {
   const dir = remoteDir.replace(/\/+$/, "");
   const valid = files.filter(isFile);
-  const targets = valid.map((p) => `${dir}/${remoteNameFor(p)}`);
+  const rawTargets = valid.map((p) => `${dir}/${remoteNameFor(p)}`);
+  const targets = deduplicateTargets(rawTargets);
   return { valid, targets };
 }
 
